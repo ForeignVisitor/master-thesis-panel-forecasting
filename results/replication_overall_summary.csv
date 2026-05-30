@@ -1,0 +1,5 @@
+metric,value
+mean_loss1,1.5538815771548902
+mean_loss2,1.551796906848505
+mean_loss_diff,0.002084670306385162
+share_model1_better,0.488
