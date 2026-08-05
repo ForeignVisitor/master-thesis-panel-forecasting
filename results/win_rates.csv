@@ -1,0 +1,7 @@
+method_a,method_b,a_beats_b_rate
+naive,ar1,0.015
+naive,random_forest,0.005
+ar1,naive,0.985
+ar1,random_forest,0.09
+random_forest,naive,0.995
+random_forest,ar1,0.91
