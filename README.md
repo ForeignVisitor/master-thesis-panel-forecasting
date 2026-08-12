@@ -37,7 +37,7 @@ That figure:
 
 ## Current status
 
-Restarted clean after supervisor feedback on 2026 meeting.
+Restarted clean after supervisor feedback on 2026 meeting. All three designs (random_rows, new_periods, new_units) run end to end now with a working AR(1) baseline - see `docs/12-08-week_progress_notes.md` for the latest.
 
 ## Structure
 

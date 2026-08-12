@@ -16,106 +16,19 @@ Run:
     python predict_performance_by_split_type.py
 """
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import stats
-from sklearn.ensemble import RandomForestRegressor
 
-RANDOM_SEED = 42
-N_REPLICATIONS = 200
-TEST_FRACTION = 0.10
-MIN_TRAIN_OBS_PER_UNIT_AR1 = 5
+from src.config import N_REPLICATIONS, PROCESSED_DATA_DIR, RESULTS_DIR
+from src.metrics import asep
+from src.models import ar1_predict, naive_predict, rf_predict
+from src.splits import SPLIT_FUNCTIONS
 
-DATA_PATH = Path("data/processed/panel_data.csv")
-RESULTS_DIR = Path("results/split_type_comparison")
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def naive_predict(test_df: pd.DataFrame) -> np.ndarray:
-    return test_df["lag_1_target"].to_numpy()
-
-
-def ar1_predict(train_df: pd.DataFrame, test_df: pd.DataFrame) -> np.ndarray:
-    preds = np.full(len(test_df), np.nan)
-    test_df = test_df.reset_index(drop=True)
-
-    for unit in test_df["unit_id"].unique():
-        unit_train = train_df[train_df["unit_id"] == unit]
-        unit_test_idx = test_df.index[test_df["unit_id"] == unit]
-
-        if len(unit_train) < MIN_TRAIN_OBS_PER_UNIT_AR1:
-            preds[unit_test_idx] = test_df.loc[unit_test_idx, "lag_1_target"].to_numpy()
-            continue
-
-        x = unit_train["lag_1_target"].to_numpy()
-        y = unit_train["target"].to_numpy()
-        x_mean, y_mean = x.mean(), y.mean()
-        denom = np.sum((x - x_mean) ** 2)
-
-        if denom == 0:
-            preds[unit_test_idx] = test_df.loc[unit_test_idx, "lag_1_target"].to_numpy()
-            continue
-
-        phi = np.sum((x - x_mean) * (y - y_mean)) / denom
-        alpha = y_mean - phi * x_mean
-        x_test = test_df.loc[unit_test_idx, "lag_1_target"].to_numpy()
-        preds[unit_test_idx] = alpha + phi * x_test
-
-    return preds
-
-
-def rf_predict(train_df: pd.DataFrame, test_df: pd.DataFrame) -> np.ndarray:
-    features = ["lag_1_target", "unit_code", "time"]
-    model = RandomForestRegressor(n_estimators=300, random_state=RANDOM_SEED, n_jobs=-1)
-    model.fit(train_df[features], train_df["target"])
-    return model.predict(test_df[features])
-
-
-def asep(actual: np.ndarray, predicted: np.ndarray) -> float:
-    valid = ~np.isnan(predicted)
-    return float(np.mean((actual[valid] - predicted[valid]) ** 2))
-
-
-def split_random_rows(panel: pd.DataFrame, rep: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    rep_rng = np.random.default_rng(RANDOM_SEED + rep)
-    n = len(panel)
-    test_idx = rep_rng.choice(n, size=int(n * TEST_FRACTION), replace=False)
-    mask = np.zeros(n, dtype=bool)
-    mask[test_idx] = True
-    return panel.loc[~mask], panel.loc[mask]
-
-
-def split_new_periods(panel: pd.DataFrame, rep: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Hold out the most recent years for ALL units -> pure forecasting."""
-    years = sorted(panel["time"].unique())
-    n_hold = max(1, int(len(years) * TEST_FRACTION))
-    rep_rng = np.random.default_rng(RANDOM_SEED + rep)
-    # small random jitter on which recent block to hold out, keeps it a real
-    # Monte Carlo replication while staying a "future years" design
-    start = rep_rng.integers(0, max(1, len(years) - n_hold))
-    hold_years = set(years[start:start + n_hold]) if rep % 2 == 0 else set(years[-n_hold:])
-    mask = panel["time"].isin(hold_years)
-    return panel.loc[~mask], panel.loc[mask]
-
-
-def split_new_units(panel: pd.DataFrame, rep: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Hold out entire countries -> pure prediction for new cross-sectional units."""
-    units = panel["unit_id"].unique()
-    rep_rng = np.random.default_rng(RANDOM_SEED + rep)
-    n_hold = max(1, int(len(units) * TEST_FRACTION))
-    hold_units = rep_rng.choice(units, size=n_hold, replace=False)
-    mask = panel["unit_id"].isin(hold_units)
-    return panel.loc[~mask], panel.loc[mask]
-
-
-SPLIT_FUNCTIONS = {
-    "random_rows": split_random_rows,
-    "new_periods": split_new_periods,
-    "new_units": split_new_units,
-}
+DATA_PATH = PROCESSED_DATA_DIR / "panel_data.csv"
+OUT_DIR = RESULTS_DIR / "split_type_comparison"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def run_all_designs(panel: pd.DataFrame) -> pd.DataFrame:
@@ -150,7 +63,7 @@ def run_all_designs(panel: pd.DataFrame) -> pd.DataFrame:
 
 
 def summarize(results: pd.DataFrame) -> None:
-    results.to_csv(RESULTS_DIR / "asep_by_design.csv", index=False)
+    results.to_csv(OUT_DIR / "asep_by_design.csv", index=False)
 
     designs = results["design"].unique()
     methods = results["method"].unique()
@@ -173,7 +86,7 @@ def summarize(results: pd.DataFrame) -> None:
 
     axes[0].set_ylabel("Empirical distribution function")
     plt.tight_layout()
-    plt.savefig(RESULTS_DIR / "asep_ecdf_by_design.png", dpi=150)
+    plt.savefig(OUT_DIR / "asep_ecdf_by_design.png", dpi=150)
     plt.close()
 
     summary_rows = []
@@ -190,7 +103,7 @@ def summarize(results: pd.DataFrame) -> None:
                 "n_replications": len(values),
             })
     summary_df = pd.DataFrame(summary_rows)
-    summary_df.to_csv(RESULTS_DIR / "asep_summary_by_design.csv", index=False)
+    summary_df.to_csv(OUT_DIR / "asep_summary_by_design.csv", index=False)
 
     test_rows = []
     for design in designs:
@@ -214,13 +127,13 @@ def summarize(results: pd.DataFrame) -> None:
                     "t_stat": t_stat,
                     "p_value": p_val,
                 })
-    pd.DataFrame(test_rows).to_csv(RESULTS_DIR / "significance_by_design.csv", index=False)
+    pd.DataFrame(test_rows).to_csv(OUT_DIR / "significance_by_design.csv", index=False)
 
     print("\nSaved:")
-    print(" -", RESULTS_DIR / "asep_by_design.csv")
-    print(" -", RESULTS_DIR / "asep_ecdf_by_design.png")
-    print(" -", RESULTS_DIR / "asep_summary_by_design.csv")
-    print(" -", RESULTS_DIR / "significance_by_design.csv")
+    print(" -", OUT_DIR / "asep_by_design.csv")
+    print(" -", OUT_DIR / "asep_ecdf_by_design.png")
+    print(" -", OUT_DIR / "asep_summary_by_design.csv")
+    print(" -", OUT_DIR / "significance_by_design.csv")
 
 
 def main() -> None:
