@@ -95,6 +95,45 @@ def ar1_predict(
     return preds
 
 
+def ar1_predict_per_unit_only(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    min_train_obs: int = MIN_TRAIN_OBS_PER_UNIT_AR1,
+) -> np.ndarray:
+    """Strictly per-unit AR(1), no pooled fallback at all.
+
+    For comparison only (meeting follow-up: "what happens if we use a
+    separate AR(1) for each unit"). A test row for a unit with fewer than
+    `min_train_obs` training rows, or a degenerate per-unit fit, is left as
+    NaN instead of falling back to anything -- `metrics.asep` skips NaNs,
+    so those rows are simply excluded rather than silently guessed. This is
+    the "mark as not applicable" alternative from the new_units fix,
+    applied generally.
+    """
+    preds = np.full(len(test_df), np.nan)
+    test_df = test_df.reset_index(drop=True)
+
+    for unit in test_df["unit_id"].unique():
+        unit_train = train_df[train_df["unit_id"] == unit]
+        unit_test_idx = test_df.index[test_df["unit_id"] == unit]
+
+        if len(unit_train) < min_train_obs:
+            continue
+
+        fitted = _fit_ar1(
+            unit_train["lag_1_target"].to_numpy(),
+            unit_train["target"].to_numpy(),
+        )
+        if fitted is None:
+            continue
+
+        alpha, phi = fitted
+        x_test = test_df.loc[unit_test_idx, "lag_1_target"].to_numpy()
+        preds[unit_test_idx] = alpha + phi * x_test
+
+    return preds
+
+
 def rf_predict(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,

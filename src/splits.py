@@ -76,3 +76,24 @@ SPLIT_FUNCTIONS = {
     "new_periods": split_new_periods_pair,
     "new_units": split_new_units,
 }
+
+
+def walk_forward_folds(panel: pd.DataFrame, n_folds: int = 5):
+    """Expanding-window, one-step-ahead folds over the last `n_folds` years.
+
+    Mirrors the walk-forward example from the meeting: train on everything
+    through year 46, predict 47; train through 47, predict 48; ... train
+    through 49, predict 50. Each fold's training set is *expanding* (all
+    years strictly before the test year), not a fixed-size rolling window.
+
+    Returns a list of (test_year, train_df, test_df) tuples, one per fold,
+    oldest test year first.
+    """
+    years = sorted(panel["time"].unique())
+    test_years = years[-n_folds:]
+    folds = []
+    for test_year in test_years:
+        train_df = panel[panel["time"] < test_year]
+        test_df = panel[panel["time"] == test_year]
+        folds.append((test_year, train_df, test_df))
+    return folds
