@@ -134,6 +134,61 @@ def ar1_predict_per_unit_only(
     return preds
 
 
+def mean_predict(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    min_train_obs: int = 1,
+) -> np.ndarray:
+    """Predict each unit's value as that unit's own historical mean.
+
+    Part A baseline: single-variable "guess a new observation" predictor,
+    no lag feature, no covariates. Falls back to the pooled (whole
+    training set) mean for a unit with fewer than `min_train_obs`
+    training rows, same fallback pattern as `ar1_predict` -- avoids
+    repeating the silent-fallback-to-naive bug for units with little or
+    no history.
+    """
+    preds = np.full(len(test_df), np.nan)
+    test_df = test_df.reset_index(drop=True)
+    global_mean = train_df["target"].mean()
+
+    for unit in test_df["unit_id"].unique():
+        unit_train = train_df[train_df["unit_id"] == unit]
+        unit_test_idx = test_df.index[test_df["unit_id"] == unit]
+        if len(unit_train) >= min_train_obs:
+            preds[unit_test_idx] = unit_train["target"].mean()
+        else:
+            preds[unit_test_idx] = global_mean
+
+    return preds
+
+
+def median_predict(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    min_train_obs: int = 1,
+) -> np.ndarray:
+    """Predict each unit's value as that unit's own historical median.
+
+    Same idea as `mean_predict`, but the median -- more robust to a
+    skewed target (e.g. a dollar/euro-denominated variable), which is
+    exactly the comparison Part A is meant to illustrate.
+    """
+    preds = np.full(len(test_df), np.nan)
+    test_df = test_df.reset_index(drop=True)
+    global_median = train_df["target"].median()
+
+    for unit in test_df["unit_id"].unique():
+        unit_train = train_df[train_df["unit_id"] == unit]
+        unit_test_idx = test_df.index[test_df["unit_id"] == unit]
+        if len(unit_train) >= min_train_obs:
+            preds[unit_test_idx] = unit_train["target"].median()
+        else:
+            preds[unit_test_idx] = global_median
+
+    return preds
+
+
 def rf_predict(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
