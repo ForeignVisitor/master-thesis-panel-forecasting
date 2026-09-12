@@ -55,6 +55,13 @@ from src.splits import split_random_rows
 OUT_DIR = RESULTS_DIR / "part_a_mean_vs_median"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Real Penn World Table data, from load_pwt_gdp_employment.py (run locally --
+# see that script's docstring). Y here is GDP per capita (real GDP,
+# output-side, chained PPPs, divided by population). Employment isn't used
+# yet -- that's the covariate for Part B, later.
+PWT_DATA_PATH = PROCESSED_DATA_DIR / "pwt_gdp_employment.csv"
+PWT_MIN_YEARS_PER_UNIT = 15
+
 N_REPLICATIONS = 200
 METHODS = {
     "mean": mean_predict,
@@ -174,11 +181,29 @@ def main() -> None:
     syn_results = run_monte_carlo(syn_panel, METHODS)
     summarize_and_plot(syn_results, OUT_DIR / "synthetic_data", " (synthetic skewed monetary panel)")
 
+    # --- 3. real Penn World Table data (GDP per capita), if it's there ---
+    if PWT_DATA_PATH.exists():
+        print("\n=== Part A on REAL PWT data (GDP per capita) ===")
+        pwt_raw = pd.read_csv(PWT_DATA_PATH)
+        pwt_panel = build_features(
+            pwt_raw,
+            processed_dir=OUT_DIR / "pwt_real_data",
+            min_years_per_unit=PWT_MIN_YEARS_PER_UNIT,
+        )
+        print(f"PWT panel ready: {len(pwt_panel)} rows, {pwt_panel['unit_id'].nunique()} countries")
+        pwt_results = run_monte_carlo(pwt_panel, METHODS)
+        summarize_and_plot(pwt_results, OUT_DIR / "pwt_real_data", " (real PWT GDP-per-capita panel)")
+    else:
+        print(
+            f"\nSkipping real PWT data -- {PWT_DATA_PATH} not found. "
+            "Run load_pwt_gdp_employment.py first (locally, needs internet) to generate it."
+        )
+
     print(
         "\nReminder: ASEP (squared error) is minimized in the population by the mean, "
         "not the median -- so mean beating median on ASEP even under skew is not a bug. "
         "What to look for is whether the GAP between mean and median narrows (or flips) "
-        "on the skewed synthetic panel vs. the real one, and how AAEP (absolute error) "
+        "on the skewed synthetic panel vs. the real ones, and how AAEP (absolute error) "
         "compares -- that's the honest version of the 'median is more robust' story."
     )
 
